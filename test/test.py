@@ -15,12 +15,25 @@ class UserThread(threading.Thread):
         self.user_id = user_id
 
     def run(self):
-        response = requests.post(API_URL % USER_COUNT_ENDPOINT % self.user_id)
+        requests.post(API_URL % USER_COUNT_ENDPOINT % self.user_id)
+
+class UserThreadCountTwice(threading.Thread):
+    user_id: int
+    response: requests.Response
+    def __init__(self, user_id):
+        super(UserThreadCountTwice, self).__init__()
+        self.user_id = user_id
+
+    def run(self):
+        requests.post(API_URL % USER_COUNT_ENDPOINT % self.user_id)
+        self.response = requests.post(API_URL % USER_COUNT_ENDPOINT % self.user_id)
 
 def isolate(func):
     def wrapper(*args, **kwargs):
-        func(*args, **kwargs)
-        requests.post(API_URL % RESET_ENDPOINT)
+        try:
+            func(*args, **kwargs)
+        finally:
+            requests.delete(API_URL % RESET_ENDPOINT)
     return wrapper
 
 class TestSuite(unittest.TestCase):
@@ -55,4 +68,31 @@ class TestSuite(unittest.TestCase):
             response = requests.get(API_URL % USER_COUNTED_ENDPOINT % i)
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.json().get("message"), True)
+
+    @isolate
+    def test_cant_count_twice(self):
+        """ Tests if a user can't count twice """
+        response = requests.post(API_URL % USER_COUNT_ENDPOINT % 0)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json().get("message"), "Counted")
+
+        response = requests.post(API_URL % USER_COUNT_ENDPOINT % 0)
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json().get("error"), "User already counted")
+
+    @isolate
+    def test_500_cant_count_twice(self):
+        """ Tests if 500 users can't count twice """
+        threads = [UserThreadCountTwice(i) for i in range(500)]
+        for thread in threads:
+            thread.start()
+
+        for thread in threads:
+            thread.join()
+
+        for thread in threads:
+            response = thread.response
+            
+            self.assertEqual(response.status_code, 400)
+            self.assertEqual(response.json().get("error"), "User already counted")
     

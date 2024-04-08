@@ -35,7 +35,6 @@ async function seeder() {
 await seeder();
 
 app.post('/users/:name/count', async (req, res) => {
-    console.log('Received request for POST /users/:name/count');
     const name = req.params.name;
     const user = await prisma.user.findFirst({ where: { name } });
     if (!user)
@@ -64,6 +63,7 @@ app.post('/users/:name/count', async (req, res) => {
     }).then(() => {
         res.status(200).json({ message: 'Counted' });   
     }, (err: Error) => {
+        console.log(err.message);
         res.status(400).json({ error: err.message });
     })
 });
@@ -84,18 +84,27 @@ app.get('/count/num', async (req, res) => {
 });
 
 app.delete('/app/reset', async (req, res) => {
+    await Promise.all([...Array(500).keys()].map(i =>
+        prisma.user.update({
+            where: { name: `user${i}` },
+            data: {
+                counts: {
+                    disconnect: { id: 1 }
+                }
+            }
+        })
+    ));
     await prisma.counter.update({
         where: { id: 1 },
-        data: { 
+        data: {
             counter: 0,
-            users: { set: [] }
         }
     });
     res.status(200).json({ message: 'Reset' });
 });
 
 app.use((req, res) => {
-    // console.log("Received request for " + req.method + " " + req.url);
+    console.log("Received request for " + req.method + " " + req.url);
     res.status(404).send('Not found');
 });
 
